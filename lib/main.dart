@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http; // HTTP-клиент [web:41]
+import 'package:http/http.dart' as http; // HTTP [web:41]
+import 'package:url_launcher/url_launcher.dart'; // открытие ссылок [web:69]
 
 void main() {
   runApp(const LibraryApp());
@@ -34,7 +35,8 @@ class CategoryInfo {
   final String subtitle;
   final int articles;
   final Color color;
-  final String searchQuery; // что отправляем в OpenLibrary
+  final String searchQuery; // запрос в Open Library
+  final String description; // текст для экрана категории
 
   const CategoryInfo({
     required this.id,
@@ -43,10 +45,11 @@ class CategoryInfo {
     required this.articles,
     required this.color,
     required this.searchQuery,
+    required this.description,
   });
 }
 
-// список категорий
+/// Тематические разделы с лором/описанием и поисковыми запросами
 const List<CategoryInfo> kCategories = [
   CategoryInfo(
     id: 'getting-started',
@@ -54,7 +57,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'Introduction, basics, and tutorials',
     articles: 3,
     color: Color(0xFFF2C94C),
-    searchQuery: 'programming basics',
+    searchQuery: 'learning how to read',
+    description:
+        'Вводный этаж библиотеки. Здесь собраны книги и руководства, помогающие быстро войти в новую тему, освоить базовые понятия и выстроить фундамент знаний.',
   ),
   CategoryInfo(
     id: 'combat',
@@ -62,7 +67,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'Battle mechanics and strategies',
     articles: 3,
     color: Color(0xFFE57373),
-    searchQuery: 'strategy games',
+    searchQuery: 'strategy tactics warfare',
+    description:
+        'Раздел о стратегическом мышлении и принятии решений. Тактика, военное дело, управление ресурсами и любые книги, учящие “сражаться” за результат.',
   ),
   CategoryInfo(
     id: 'characters',
@@ -70,7 +77,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'Librarians, Guests, and more',
     articles: 3,
     color: Color(0xFF9B51E0),
-    searchQuery: 'character design',
+    searchQuery: 'biography famous people',
+    description:
+        'Этаж персон. Биографии учёных, писателей, исторических фигур и вымышленных героев, через которых раскрываются эпохи и идеи.',
   ),
   CategoryInfo(
     id: 'lore-world',
@@ -78,7 +87,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'The City, Wings, and history',
     articles: 3,
     color: Color(0xFF4DB6AC),
-    searchQuery: 'worldbuilding',
+    searchQuery: 'worldbuilding history mythology',
+    description:
+        'Мироустройство и лор. Книги об истории, мифах, культурах и создании вымышленных миров — от реальных цивилизаций до фэнтези‑сеттингов.',
   ),
   CategoryInfo(
     id: 'library-floors',
@@ -86,7 +97,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'All floors and departments',
     articles: 5,
     color: Color(0xFFF2C94C),
-    searchQuery: 'architecture',
+    searchQuery: 'architecture library design',
+    description:
+        'Структура самой библиотеки. Архитектура знаний, устройство библиотек, организация пространства и информации.',
   ),
   CategoryInfo(
     id: 'abnormalities',
@@ -94,7 +107,9 @@ const List<CategoryInfo> kCategories = [
     subtitle: 'Special entities and powers',
     articles: 4,
     color: Color(0xFFFFA726),
-    searchQuery: 'mythology',
+    searchQuery: 'occult forbidden books mysteries',
+    description:
+        'Странные и “аномальные” тексты: спорные, мистические, маргинальные работы и книги с необычной репутацией.',
   ),
 ];
 
@@ -153,7 +168,7 @@ class _LibraryIndexPageState extends State<LibraryIndexPage> {
     final CategoryInfo? matched = _findFirstMatch(_query);
 
     return Scaffold(
-      drawer: const LibraryDrawer(),
+      drawer: LibraryDrawer(onSelectCategory: _openCategory),
       appBar: AppBar(
         toolbarHeight: 72,
         leading: Builder(
@@ -365,8 +380,11 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
+/// Drawer с темами
 class LibraryDrawer extends StatelessWidget {
-  const LibraryDrawer({super.key});
+  final void Function(CategoryInfo category) onSelectCategory;
+
+  const LibraryDrawer({super.key, required this.onSelectCategory});
 
   @override
   Widget build(BuildContext context) {
@@ -401,6 +419,24 @@ class LibraryDrawer extends StatelessWidget {
                 Navigator.pop(context);
               },
             ),
+            const Divider(color: Color(0xFF8D6E63)),
+            ...kCategories.map(
+              (c) => ListTile(
+                leading: const Icon(Icons.menu_book, color: Color(0xFFD5B27A)),
+                title: Text(
+                  c.title,
+                  style: const TextStyle(color: Color(0xFFF4E1B2)),
+                ),
+                subtitle: Text(
+                  c.subtitle,
+                  style: const TextStyle(color: Color(0xFFD5B27A), fontSize: 11),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  onSelectCategory(c);
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -408,23 +444,35 @@ class LibraryDrawer extends StatelessWidget {
   }
 }
 
-// -------- Open Library API layer --------
+// ---------- Open Library API ----------
 
-// простая функция для запроса Search API Open Library [web:50][web:57]
+// Search API — список книг по запросу [web:50][web:57]
 Future<List<dynamic>> fetchBooks(String query) async {
   final uri = Uri.parse(
     'https://openlibrary.org/search.json?q=${Uri.encodeQueryComponent(query)}',
   );
-  final response = await http.get(uri); // GET запрос [web:40][web:41]
+  final response = await http.get(uri); // [web:40][web:41]
   if (response.statusCode == 200) {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return (data['docs'] as List).take(20).toList(); // максимум 20 книг
+    return (data['docs'] as List).take(20).toList();
   } else {
     throw Exception('Server error: ${response.statusCode}');
   }
 }
 
-// -------- Category page with API --------
+// Covers API — URL обложки по cover_i [web:82]
+String? buildCoverUrl(dynamic coverId) {
+  if (coverId == null) return null;
+  return 'https://covers.openlibrary.org/b/id/$coverId-M.jpg';
+}
+
+// Страница книги на сайте Open Library [web:50]
+String buildWorkUrl(String key) {
+  // key вида "/works/OL12345W" или "/books/OL12345M"
+  return 'https://openlibrary.org$key';
+}
+
+// ---------- Экраны ----------
 
 class CategoryPage extends StatefulWidget {
   final CategoryInfo category;
@@ -466,6 +514,15 @@ class _CategoryPageState extends State<CategoryPage> {
     }
   }
 
+  void _openBook(Map<String, dynamic> book) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BookDetailsPage(book: book),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = widget.category.title;
@@ -483,64 +540,213 @@ class _CategoryPageState extends State<CategoryPage> {
         iconTheme: const IconThemeData(color: Color(0xFFF4E1B2)),
       ),
       backgroundColor: const Color(0xFF20120B),
-      body: loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFF2C94C)),
-            )
-          : error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        error!,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 14,
+      body: Column(
+        children: [
+          // блок описания категории
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2B1810),
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF3A2415), width: 1),
+              ),
+            ),
+            child: Text(
+              widget.category.description,
+              style: const TextStyle(
+                color: Color(0xFFD5B27A),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFFF2C94C)),
+                  )
+                : error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              error!,
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            ElevatedButton(
+                              onPressed: _loadData,
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: _loadData,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(
-                    color: Color(0xFF3A2415),
-                    height: 1,
-                  ),
-                  itemBuilder: (context, index) {
-                    final book = items[index] as Map<String, dynamic>;
-                    final title = (book['title'] as String?) ?? 'Unknown title';
-                    final authors =
-                        (book['author_name'] as List?)?.join(', ') ??
-                            'Unknown author';
-                    final year = (book['first_publish_year']?.toString()) ??
-                        'Year?';
+                      )
+                    : ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const Divider(
+                          color: Color(0xFF3A2415),
+                          height: 1,
+                        ),
+                        itemBuilder: (context, index) {
+                          final book = items[index] as Map<String, dynamic>;
+                          final title =
+                              (book['title'] as String?) ?? 'Unknown title';
+                          final authors =
+                              (book['author_name'] as List?)?.join(', ') ??
+                                  'Unknown author';
+                          final year =
+                              (book['first_publish_year']?.toString()) ??
+                                  'Year?';
+                          final coverUrl = buildCoverUrl(book['cover_i']);
 
-                    return ListTile(
-                      title: Text(
-                        title,
-                        style: const TextStyle(
-                          color: Color(0xFFF4E1B2),
-                          fontSize: 14,
-                        ),
+                          return ListTile(
+                            onTap: () => _openBook(book),
+                            leading: coverUrl != null
+                                ? Image.network(
+                                    coverUrl,
+                                    width: 40,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const Icon(Icons.menu_book,
+                                    color: Color(0xFFD5B27A)),
+                            title: Text(
+                              title,
+                              style: const TextStyle(
+                                color: Color(0xFFF4E1B2),
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '$authors • $year',
+                              style: const TextStyle(
+                                color: Color(0xFFD5B27A),
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: const Icon(
+                              Icons.chevron_right,
+                              color: Color(0xFFD5B27A),
+                            ),
+                          );
+                        },
                       ),
-                      subtitle: Text(
-                        '$authors • $year',
-                        style: const TextStyle(
-                          color: Color(0xFFD5B27A),
-                          fontSize: 12,
-                        ),
-                      ),
-                    );
-                  },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Детальный экран книги с кнопкой открытия страницы Open Library
+class BookDetailsPage extends StatelessWidget {
+  final Map<String, dynamic> book;
+
+  const BookDetailsPage({super.key, required this.book});
+
+  Future<void> _launchOpenLibraryPage() async {
+    final key = (book['key'] as String?) ?? '';
+    if (key.isEmpty) return;
+    final url = Uri.parse(buildWorkUrl(key));
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url,
+          mode: LaunchMode.externalApplication); // открытие в браузере [web:50]
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (book['title'] as String?) ?? 'Unknown title';
+    final authors =
+        (book['author_name'] as List?)?.join(', ') ?? 'Unknown author';
+    final year = (book['first_publish_year']?.toString()) ?? 'Year?';
+    final description =
+        (book['subtitle'] as String?) ?? 'Описание для этой книги ещё не добавлено.';
+    final coverUrl = buildCoverUrl(book['cover_i']);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Book Details',
+          style: TextStyle(
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFF4E1B2),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Color(0xFFF4E1B2)),
+      ),
+      backgroundColor: const Color(0xFF20120B),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (coverUrl != null)
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    coverUrl,
+                    height: 200,
+                    fit: BoxFit.cover,
+                  ),
                 ),
+              ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFFF4E1B2),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              authors,
+              style: const TextStyle(
+                color: Color(0xFFD5B27A),
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'First published: $year',
+              style: const TextStyle(
+                color: Color(0xFFD5B27A),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              description,
+              style: const TextStyle(
+                color: Color(0xFFD5B27A),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.open_in_new),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF2C94C),
+                  foregroundColor: const Color(0xFF3A2415),
+                ),
+                onPressed: _launchOpenLibraryPage,
+                label: const Text('Открыть в Open Library'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
