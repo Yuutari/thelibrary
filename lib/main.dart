@@ -258,7 +258,7 @@ class _SearchBar extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
 
   const _SearchBar({
-    super.key,
+    // super.key,
     required this.controller,
     this.onSubmitted,
   });
@@ -444,14 +444,12 @@ class LibraryDrawer extends StatelessWidget {
   }
 }
 
-// ---------- Open Library API ----------
-
-// Search API — список книг по запросу [web:50][web:57]
+// API
 Future<List<dynamic>> fetchBooks(String query) async {
   final uri = Uri.parse(
     'https://openlibrary.org/search.json?q=${Uri.encodeQueryComponent(query)}',
   );
-  final response = await http.get(uri); // [web:40][web:41]
+  final response = await http.get(uri);
   if (response.statusCode == 200) {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return (data['docs'] as List).take(20).toList();
@@ -460,19 +458,17 @@ Future<List<dynamic>> fetchBooks(String query) async {
   }
 }
 
-// Covers API — URL обложки по cover_i [web:82]
+// Covers API
 String? buildCoverUrl(dynamic coverId) {
   if (coverId == null) return null;
   return 'https://covers.openlibrary.org/b/id/$coverId-M.jpg';
 }
 
-// Страница книги на сайте Open Library [web:50]
+// Страница книги в Open Library
 String buildWorkUrl(String key) {
-  // key вида "/works/OL12345W" или "/books/OL12345M"
+  // key
   return 'https://openlibrary.org$key';
 }
-
-// ---------- Экраны ----------
 
 class CategoryPage extends StatefulWidget {
   final CategoryInfo category;
